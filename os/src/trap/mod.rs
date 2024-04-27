@@ -1,37 +1,21 @@
-//! Trap handling functionality
-//!
-//! For rCore, we have a single trap entry point, namely `__alltraps`. At
-//! initialization in [`init()`], we set the `stvec` CSR to point to it.
-//!
-//! All traps go through `__alltraps`, which is defined in `trap.S`. The
-//! assembly language code does just enough work restore the kernel space
-//! context, ensuring that Rust code safely runs, and transfers control to
-//! [`trap_handler()`].
-//!
-//! It then calls different functionality based on what exactly the exception
-//! was. For example, timer interrupts trigger task preemption, and syscalls go
-//! to [`syscall()`].
-
 mod context;
 
-use crate::batch::run_next_app;
-use crate::syscall::syscall;
-use core::arch::global_asm;
+pub use context::TrapContext;
+
 use riscv::register::{
     mtvec::TrapMode,
     scause::{self, Exception, Trap},
     stval, stvec,
 };
+use crate::batch::run_next_app;
+use crate::syscall::syscall;
 
-global_asm!(include_str!("trap.S"));
+core::arch::global_asm!(include_str!("trap.S"));
 
-/// initialize CSR `stvec` as the entry of `__alltraps`
 pub fn init() {
-    extern "C" {
-        fn __alltraps();
-    }
+    extern "C" { fn __alltraps(); }
     unsafe {
-        stvec::write(__alltraps as usize, TrapMode::Direct);
+        stvec::write(__alltraps as usize, TrapMode::Direct)
     }
 }
 
@@ -63,5 +47,3 @@ pub fn trap_handler(cx: &mut TrapContext) -> &mut TrapContext {
     }
     cx
 }
-
-pub use context::TrapContext;

@@ -1,14 +1,12 @@
-//! SBI console driver, for text output
-use crate::sbi::console_putchar;
 use core::fmt::{self, Write};
+
+use crate::sbi::console_putchar;
 
 struct Stdout;
 
 impl Write for Stdout {
     fn write_str(&mut self, s: &str) -> fmt::Result {
-        for c in s.chars() {
-            console_putchar(c as usize);
-        }
+        s.chars().for_each(|c| { console_putchar(c as usize); });
         Ok(())
     }
 }
@@ -17,7 +15,6 @@ pub fn print(args: fmt::Arguments) {
     Stdout.write_fmt(args).unwrap();
 }
 
-/// Print! to the host console using the format string and arguments.
 #[macro_export]
 macro_rules! print {
     ($fmt: literal $(, $($arg: tt)+)?) => {
@@ -25,7 +22,6 @@ macro_rules! print {
     }
 }
 
-/// Println! to the host console using the format string and arguments.
 #[macro_export]
 macro_rules! println {
     ($fmt: literal $(, $($arg: tt)+)?) => {

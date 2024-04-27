@@ -1,4 +1,5 @@
 //! App management syscalls
+use log::trace;
 use crate::batch::run_next_app;
 
 /// task exits and submit an exit code
