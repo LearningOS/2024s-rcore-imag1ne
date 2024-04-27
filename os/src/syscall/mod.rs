@@ -14,8 +14,10 @@
 const SYSCALL_WRITE: usize = 64;
 /// exit syscall
 const SYSCALL_EXIT: usize = 93;
+
 /// yield syscall
 const SYSCALL_YIELD: usize = 124;
+
 /// gettime syscall
 const SYSCALL_GET_TIME: usize = 169;
 /// taskinfo syscall
@@ -26,6 +28,7 @@ mod process;
 
 use fs::*;
 use process::*;
+
 /// handle syscall exception with `syscall_id` and other arguments
 pub fn syscall(syscall_id: usize, args: [usize; 3]) -> isize {
     match syscall_id {

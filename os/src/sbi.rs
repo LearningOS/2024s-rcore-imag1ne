@@ -1,40 +1,72 @@
-//! SBI call wrappers
+#![allow(dead_code)]
 
-use core::arch::asm;
+/// [System Reset Extension (EID #0x53525354 "SRST")](https://github.com/riscv-non-isa/riscv-sbi-doc/blob/master/src/ext-sys-reset.adoc)
+const SYSTEM_RESET_EID: usize = 0x53525354;
+const SYSTEM_RESET_FID: usize = 0x0;
 
-const SBI_SET_TIMER: usize = 0;
-const SBI_CONSOLE_PUTCHAR: usize = 1;
-const SBI_SHUTDOWN: usize = 8;
+const SRST_RESET_TYPE_SHUTDOWN: u32 = 0x0;
+const SRST_RESET_TYPE_COLD_REBOOT: u32 = 0x1;
+const SRST_RESET_TYPE_WARM_REBOOT: u32 = 0x2;
 
-/// general sbi call
-#[inline(always)]
-fn sbi_call(which: usize, arg0: usize, arg1: usize, arg2: usize) -> usize {
-    let mut ret;
+const SRST_RESET_REASON_NO_REASON: u32 = 0x0;
+const SRST_RESET_REASON_SYSTEM_FAILURE: u32 = 0x1;
+
+const CONSOLE_PUTCHAR_EID: usize = 0x01;
+
+const SET_TIMER_EID: usize = 0x54494D45;
+const SET_TIMER_FID: usize = 0x0;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+#[repr(C)]
+pub struct SbiRet {
+    pub error: usize,
+    pub value: usize,
+}
+
+pub fn shutdown() -> SbiRet {
+    let error;
+    let value;
+
     unsafe {
-        asm!(
-            "li x16, 0",
-            "ecall",
-            inlateout("x10") arg0 => ret,
-            in("x11") arg1,
-            in("x12") arg2,
-            in("x17") which,
+        core::arch::asm!(
+        "ecall",
+        in("a6") SYSTEM_RESET_FID,
+        in("a7") SYSTEM_RESET_EID,
+        inlateout("a0") SRST_RESET_TYPE_SHUTDOWN as usize => error, // SRST System Reset Types
+        inlateout("a1") SRST_RESET_REASON_NO_REASON as usize => value, // SRST System Reset Reason
         );
     }
-    ret
+
+    SbiRet { error, value }
 }
 
-/// use sbi call to set timer
-pub fn set_timer(timer: usize) {
-    sbi_call(SBI_SET_TIMER, timer, 0, 0);
+pub fn console_putchar(ch: usize) -> usize {
+    let error;
+
+    unsafe {
+        core::arch::asm!(
+        "ecall",
+        in("a7") CONSOLE_PUTCHAR_EID,
+        inlateout("a0") ch => error,
+        );
+    }
+
+    error
 }
 
-/// use sbi call to putchar in console (qemu uart handler)
-pub fn console_putchar(c: usize) {
-    sbi_call(SBI_CONSOLE_PUTCHAR, c, 0, 0);
-}
+pub fn set_timer(timer: usize) -> SbiRet {
+    let error;
+    let value;
 
-/// use sbi call to shutdown the kernel
-pub fn shutdown() -> ! {
-    sbi_call(SBI_SHUTDOWN, 0, 0, 0);
-    panic!("It should shutdown!");
+    unsafe {
+        core::arch::asm!(
+        "ecall",
+        in("a6") SET_TIMER_FID,
+        in("a7") SET_TIMER_EID,
+        inlateout("a0") timer => error,
+        lateout("a1") value,
+        );
+    }
+
+    SbiRet { error, value }
 }

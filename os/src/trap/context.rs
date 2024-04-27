@@ -1,26 +1,28 @@
-use riscv::register::sstatus::{self, Sstatus, SPP};
-
 #[repr(C)]
-#[derive(Debug)]
-/// trap context structure containing sstatus, sepc and registers
 pub struct TrapContext {
-    /// General-Purpose Register x0-31
     pub x: [usize; 32],
-    /// Supervisor Status Register
-    pub sstatus: Sstatus,
-    /// Supervisor Exception Program Counter
+    pub sstatus: usize,
     pub sepc: usize,
 }
 
 impl TrapContext {
-    /// put the sp(stack pointer) into x\[2\] field of TrapContext
+    /// set stack pointer to x_2 reg (sp)
     pub fn set_sp(&mut self, sp: usize) {
         self.x[2] = sp;
     }
-    /// init the trap context of an application
+    /// init app context
     pub fn app_init_context(entry: usize, sp: usize) -> Self {
-        let mut sstatus = sstatus::read(); // CSR sstatus
-        sstatus.set_spp(SPP::User); //previous privilege mode: user mode
+        // read sstatus
+        let mut sstatus: usize;
+        unsafe {
+            core::arch::asm!(
+            "csrrs {sstatus}, 0x100, x0",
+            sstatus = out(reg) sstatus
+            );
+        }
+        // set ssp as user
+        sstatus &= !(1 << 8);
+
         let mut cx = Self {
             x: [0; 32],
             sstatus,
