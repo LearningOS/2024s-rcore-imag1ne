@@ -1,43 +1,50 @@
-#![feature(panic_info_message)]
 #![no_std]
 #![no_main]
+#![feature(panic_info_message)]
+#![feature(alloc_error_handler)]
 
 #[macro_use]
 mod console;
-mod lang_items;
-mod sbi;
-mod logging;
-mod sync;
-mod trap;
-mod syscall;
-mod loader;
 mod config;
+mod lang_items;
+mod loader;
+mod logging;
+mod mm;
+mod sbi;
+mod sync;
+mod syscall;
 mod task;
 mod timer;
+mod trap;
 
 use core::arch::global_asm;
 
 #[macro_use]
+extern crate bitflags;
+#[macro_use]
 extern crate log;
+
+extern crate alloc;
 
 use sbi::shutdown;
 
 global_asm!(include_str!("entry.asm"));
 global_asm!(include_str!("link_app.S"));
 
+/// clear BSS segment
 fn clear_bss() {
     extern "C" {
         fn sbss();
         fn ebss();
     }
-
-    (sbss as usize..ebss as usize).for_each(|a| {
-        unsafe { (a as *mut u8).write_volatile(0) }
-    });
+    unsafe {
+        core::slice::from_raw_parts_mut(sbss as usize as *mut u8, ebss as usize - sbss as usize)
+            .fill(0);
+    }
 }
 
-#[no_mangle]
-pub fn rust_main() -> ! {
+/// kernel log info
+fn kernel_log_info() {
     extern "C" {
         fn stext(); // begin addr of text segment
         fn etext(); // end addr of text segment
@@ -50,10 +57,8 @@ pub fn rust_main() -> ! {
         fn boot_stack(); // stack lower bound
         fn boot_stack_top(); // stack top
     }
-
-    clear_bss();
     logging::init();
-
+    println!("[kernel] Hello, world!");
     trace!(
         "[kernel] .text [{:#x}, {:#x})",
         stext as usize,
@@ -72,11 +77,22 @@ pub fn rust_main() -> ! {
         boot_stack_top as usize, boot_stack as usize
     );
     error!("[kernel] .bss [{:#x}, {:#x})", sbss as usize, ebss as usize);
+}
+
+#[no_mangle]
+pub fn rust_main() -> ! {
+    clear_bss();
+    kernel_log_info();
+
+    mm::init();
+    println!("[kernel] back to world!");
+    mm::remap_test();
 
     trap::init();
-    loader::load_apps();
     trap::enable_timer_interrupt();
+
     timer::set_next_trigger();
+
     task::run_first_task();
 
     shutdown();

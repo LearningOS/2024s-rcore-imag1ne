@@ -1,30 +1,21 @@
 mod context;
 mod switch;
+#[allow(clippy::module_inception)]
+mod task;
 
-use crate::config::{MAX_APP_NUM, MAX_SYSCALL_NUM};
-use crate::loader::{get_num_app, init_app_cx};
+use crate::config::MAX_SYSCALL_NUM;
+use crate::loader::{get_app_data, get_num_app};
+
+use crate::mm::MemorySet;
 use crate::sync::UPSafeCell;
 use crate::task::switch::__switch;
 use crate::timer::get_time_ms;
+use crate::trap::TrapContext;
+use alloc::vec::Vec;
 pub use context::TaskContext;
 use core::cell::{Ref, RefMut};
 use lazy_static::lazy_static;
-
-#[derive(Copy, Clone, PartialEq)]
-pub enum TaskStatus {
-    UnInit,
-    Ready,
-    Running,
-    Exited,
-}
-
-#[derive(Copy, Clone)]
-pub struct TaskControlBlock {
-    pub task_status: TaskStatus,
-    pub task_cx: TaskContext,
-    pub syscall_times: [u32; MAX_SYSCALL_NUM],
-    pub start_time: Option<usize>,
-}
+pub use task::{TaskControlBlock, TaskStatus};
 
 pub struct TaskManager {
     num_app: usize,
@@ -32,24 +23,19 @@ pub struct TaskManager {
 }
 
 struct TaskManagerInner {
-    tasks: [TaskControlBlock; MAX_APP_NUM],
+    tasks: Vec<TaskControlBlock>,
     current_task: usize,
 }
 
 lazy_static! {
     static ref TASK_MANAGER: TaskManager = {
+        println!("init TASK_MANAGER");
         let num_app = get_num_app();
-        let mut tasks = [TaskControlBlock {
-            task_cx: TaskContext::zero_init(),
-            task_status: TaskStatus::UnInit,
-            syscall_times: [0u32; MAX_SYSCALL_NUM],
-            start_time: None,
-        }; MAX_APP_NUM];
+        println!("num_app = {}", num_app);
 
-        for (app_id, task) in tasks.iter_mut().enumerate().take(num_app) {
-            task.task_cx = TaskContext::goto_restore(init_app_cx(app_id));
-            task.task_status = TaskStatus::Ready;
-        }
+        let tasks: Vec<TaskControlBlock> = (0..num_app)
+            .map(|app_id| TaskControlBlock::new(get_app_data(app_id), app_id))
+            .collect();
 
         TaskManager {
             num_app,
@@ -146,6 +132,30 @@ impl TaskManager {
         let inner = self.inner.borrow_mut();
         RefMut::map(inner, |inner| &mut inner.tasks[inner.current_task])
     }
+
+    /// Get the current 'Running' task's token.
+    fn get_current_token(&self) -> usize {
+        let inner = self.inner.borrow_mut();
+        inner.tasks[inner.current_task].get_user_token()
+    }
+
+    /// Get the current 'Running' task's trap contexts.
+    fn get_current_trap_cx(&self) -> &'static mut TrapContext {
+        let inner = self.inner.borrow_mut();
+        inner.tasks[inner.current_task].get_trap_cx()
+    }
+
+    /// Change the current 'Running' task's program break
+    pub fn change_current_program_brk(&self, size: i32) -> Option<usize> {
+        let mut inner = self.inner.borrow_mut();
+        let cur = inner.current_task;
+        inner.tasks[cur].change_program_brk(size)
+    }
+
+    fn get_current_memory_set(&self) -> RefMut<'_, MemorySet> {
+        let tcb = self.get_current_task_control_block_mut();
+        RefMut::map(tcb, |tcb| &mut tcb.memory_set)
+    }
 }
 
 pub fn suspend_current_and_run_next() {
@@ -181,4 +191,23 @@ pub fn current_task_start_time() -> Option<usize> {
 #[allow(dead_code)]
 fn run_next_task() {
     TASK_MANAGER.run_next_task();
+}
+
+/// Get the current 'Running' task's token.
+pub fn current_user_token() -> usize {
+    TASK_MANAGER.get_current_token()
+}
+
+/// Get the current 'Running' task's trap contexts.
+pub fn current_trap_cx() -> &'static mut TrapContext {
+    TASK_MANAGER.get_current_trap_cx()
+}
+
+/// Change the current 'Running' task's program break
+pub fn change_program_brk(size: i32) -> Option<usize> {
+    TASK_MANAGER.change_current_program_brk(size)
+}
+
+pub fn current_memory_set() -> RefMut<'static, MemorySet> {
+    TASK_MANAGER.get_current_memory_set()
 }
